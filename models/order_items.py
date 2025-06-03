@@ -13,6 +13,20 @@ class OrderItem:
         conn.close()
 
     @staticmethod
+    def update(order_id, variant_id, quantity, unit_price):
+        conn = connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+                       UPDATE order_items
+                       SET variant_id = %s,
+                           quantity   = %s,
+                           unit_price = %s
+                       WHERE order_id = %s
+                       """, (variant_id, quantity, unit_price, order_id))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
     def delete_by_order(order_id):
         conn = connect()
         cursor = conn.cursor()
