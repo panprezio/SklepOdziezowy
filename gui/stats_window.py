@@ -6,7 +6,7 @@ class StatsFrame(tk.Frame):
     def __init__(self, master, controller=None):
         super().__init__(master)
 
-        # Załaduj statystyki
+
         total_customers = self.count("SELECT COUNT(*) FROM customers")
         total_orders = self.count("SELECT COUNT(*) FROM orders")
         total_revenue = self.count("SELECT SUM(total_price) FROM orders")

@@ -46,7 +46,7 @@ class MainApp(tk.Tk):
         super().__init__()
         self.title("Sklep Odzieżowy")
 
-        # Menu
+
         menu = tk.Menu(self)
         self.config(menu=menu)
 

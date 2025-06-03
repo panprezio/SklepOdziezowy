@@ -1,43 +1,69 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from models.product import Product
 import re
-from tkinter import simpledialog, messagebox
 from db.db import connect
 
 class ProductFrame(tk.Frame):
     def __init__(self, master, controller=None):
         super().__init__(master)
 
-        # Pole wyszukiwania
+
         search_frame = ttk.Frame(self)
-        search_frame.pack(fill="x", pady=5, padx=5)
-        ttk.Label(search_frame, text="Szukaj:").pack(side="left")
+        search_frame.pack(fill="x", pady=10, padx=10)
+        ttk.Label(search_frame, text="Szukaj:", font=("Arial", 10)).pack(side="left")
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", self.filter_products)
         search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
         search_entry.pack(side="left", fill="x", expand=True, padx=5)
 
-        columns = ("ID", "Nazwa", "Cena")
-        self.tree = ttk.Treeview(self, columns=columns, show="headings", selectmode="browse")
+
+        columns = ("ID", "Nazwa", "Opis", "Cena", "Kategoria", "Marka", "Data dodania")
+        tree_frame = ttk.Frame(self)
+        tree_frame.pack(fill="both", expand=True, pady=5, padx=5)
+
+        self.tree = ttk.Treeview(tree_frame, columns=columns, show="headings", selectmode="browse")
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self.tree.pack(fill="both", expand=True)
+
         for col in columns:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=150)
-        self.tree.pack(fill="both", expand=True, pady=5, padx=5)
+            self.tree.heading(col, text=col, command=lambda c=col: self.sort_column(c, False))
+            self.tree.column(col, width=140)
+
 
         form = ttk.Frame(self)
-        form.pack(fill="x", pady=5, padx=5)
+        form.pack(fill="x", pady=10, padx=10)
 
-        ttk.Label(form, text="Nazwa").grid(row=0, column=0, padx=2, pady=2)
-        ttk.Label(form, text="Cena").grid(row=1, column=0, padx=2, pady=2)
+        ttk.Label(form, text="Nazwa").grid(row=0, column=0, sticky="w")
+        ttk.Label(form, text="Opis").grid(row=1, column=0, sticky="w")
+        ttk.Label(form, text="Cena").grid(row=2, column=0, sticky="w")
+        ttk.Label(form, text="Kategoria").grid(row=3, column=0, sticky="w")
+        ttk.Label(form, text="Marka").grid(row=4, column=0, sticky="w")
 
         self.name = ttk.Entry(form)
+        self.name.insert(0, "np. Koszulka")
+        self.description = ttk.Entry(form)
+        self.description.insert(0, "np. Bawełniana koszulka z nadrukiem")
         self.price = ttk.Entry(form)
-        self.name.grid(row=0, column=1, padx=2, pady=2)
-        self.price.grid(row=1, column=1, padx=2, pady=2)
+        self.price.insert(0, "np. 49.99")
+        self.category_cb = ttk.Combobox(form, state="readonly")
+        self.brand_cb = ttk.Combobox(form, state="readonly")
+
+        self.name.grid(row=0, column=1, padx=5, pady=2, sticky="ew")
+        self.description.grid(row=1, column=1, padx=5, pady=2, sticky="ew")
+        self.price.grid(row=2, column=1, padx=5, pady=2, sticky="ew")
+        self.category_cb.grid(row=3, column=1, padx=5, pady=2, sticky="ew")
+        self.brand_cb.grid(row=4, column=1, padx=5, pady=2, sticky="ew")
+
+        form.columnconfigure(1, weight=1)
+
+        self.load_categories_and_brands()
+
 
         btn_frame = ttk.Frame(self)
-        btn_frame.pack(fill="x", pady=5, padx=5)
+        btn_frame.pack(fill="x", pady=10, padx=10)
 
         ttk.Button(btn_frame, text="Dodaj produkt", command=self.add_product).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Edytuj produkt", command=self.edit_product).pack(side="left", padx=5)
@@ -47,27 +73,92 @@ class ProductFrame(tk.Frame):
         self.all_products = []
         self.load_products()
 
+    def sort_column(self, col, reverse):
+        data = [(self.tree.set(k, col), k) for k in self.tree.get_children("")]
+        try:
+            data.sort(key=lambda t: float(t[0]), reverse=reverse)
+        except ValueError:
+            data.sort(key=lambda t: t[0].lower(), reverse=reverse)
+
+        for index, (val, k) in enumerate(data):
+            self.tree.move(k, '', index)
+
+        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
+
+    def load_categories_and_brands(self):
+        self.categories = {}
+        self.brands = {}
+        try:
+            conn = connect()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT category_id, name FROM categories")
+            for cid, cname in cursor.fetchall():
+                self.categories[cname] = cid
+
+            cursor.execute("SELECT brand_id, name FROM brands")
+            for bid, bname in cursor.fetchall():
+                self.brands[bname] = bid
+
+            conn.close()
+
+            self.category_cb["values"] = list(self.categories.keys())
+            self.brand_cb["values"] = list(self.brands.keys())
+
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie udało się załadować kategorii/marek: {e}")
+
     def load_products(self):
-        self.all_products = Product.get_all()
-        self.display_products(self.all_products)
+        try:
+            conn = connect()
+            cursor = conn.cursor()
+
+            query = """
+                SELECT p.product_id, p.name, p.description, p.price,
+                       c.name AS category, b.name AS brand, p.created_at
+                FROM products p
+                LEFT JOIN categories c ON p.category_id = c.category_id
+                LEFT JOIN brands b ON p.brand_id = b.brand_id
+            """
+
+            cursor.execute(query)
+            self.all_products = cursor.fetchall()
+            conn.close()
+            self.display_products(self.all_products)
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Nie udało się załadować produktów: {e}")
 
     def display_products(self, data):
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-        for p in data:
-            self.tree.insert("", "end", values=(p[0], p[1], f"{p[2]:.2f}"))
+        self.tree.delete(*self.tree.get_children())
+        for idx, row in enumerate(data):
+            tag = 'evenrow' if idx % 2 == 0 else 'oddrow'
+            self.tree.insert("", "end", values=row, tags=(tag,))
+        self.tree.tag_configure('evenrow', background="#f9f9f9")
+        self.tree.tag_configure('oddrow', background="#ffffff")
 
     def filter_products(self, *args):
         search = self.search_var.get().lower()
-        filtered = [p for p in self.all_products if search in p[1].lower()]
+        filtered = [row for row in self.all_products if search in " ".join(str(item).lower() for item in row)]
         self.display_products(filtered)
+
+    def get_selected_product(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Błąd", "Wybierz produkt z listy")
+            return None
+        return self.tree.item(sel[0])["values"]
 
     def add_product(self):
         name = self.name.get().strip()
+        description = self.description.get().strip()
         price = self.price.get().strip()
-        if not name or not price:
+        category = self.category_cb.get()
+        brand = self.brand_cb.get()
+
+        if not all([name, description, price, category, brand]):
             messagebox.showwarning("Błąd", "Wypełnij wszystkie pola")
             return
+
         try:
             price_val = float(price)
             if price_val <= 0:
@@ -75,31 +166,38 @@ class ProductFrame(tk.Frame):
         except ValueError:
             messagebox.showwarning("Błąd", "Cena musi być dodatnią liczbą")
             return
-        Product.add(name, price_val)
-        self.load_products()
-        self.name.delete(0, tk.END)
-        self.price.delete(0, tk.END)
 
-    def get_selected_product(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Błąd", "Wybierz produkt z listy")
-            return None
-        item = self.tree.item(sel[0])
-        return item["values"]
+        category_id = self.categories.get(category)
+        brand_id = self.brands.get(brand)
+
+        try:
+            conn = connect()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO products (name, description, price, category_id, brand_id, created_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (name, description, price_val, category_id, brand_id))
+            conn.commit()
+            conn.close()
+            self.load_products()
+            self.clear_form()
+            messagebox.showinfo("Sukces", "Produkt dodany")
+        except Exception as e:
+            messagebox.showerror("Błąd", f"Wystąpił błąd: {e}")
 
     def edit_product(self):
         selected = self.get_selected_product()
         if not selected:
             return
-        pid, name, price = selected
+        pid, name, desc, price, cat_name, brand_name, *_ = selected
 
-        new_name = simpledialog.askstring("Edytuj produkt", "Nazwa:", initialvalue=name)
-        if new_name is None:
-            return
+        new_name = simpledialog.askstring("Edytuj nazwę", "Nazwa:", initialvalue=name)
+        new_desc = simpledialog.askstring("Edytuj opis", "Opis:", initialvalue=desc)
+        new_price_str = simpledialog.askstring("Edytuj cenę", "Cena:", initialvalue=price)
+        new_cat = simpledialog.askstring("Edytuj kategorię", "Kategoria:", initialvalue=cat_name)
+        new_brand = simpledialog.askstring("Edytuj markę", "Marka:", initialvalue=brand_name)
 
-        new_price_str = simpledialog.askstring("Edytuj produkt", "Cena:", initialvalue=price)
-        if new_price_str is None:
+        if None in (new_name, new_desc, new_price_str, new_cat, new_brand):
             return
 
         try:
@@ -110,17 +208,38 @@ class ProductFrame(tk.Frame):
             messagebox.showwarning("Błąd", "Cena musi być dodatnią liczbą")
             return
 
+        category_id = self.categories.get(new_cat)
+        brand_id = self.brands.get(new_brand)
+
+        if category_id is None or brand_id is None:
+            messagebox.showwarning("Błąd", "Nieprawidłowa kategoria lub marka")
+            return
+
         try:
             conn = connect()
             cursor = conn.cursor()
-            cursor.execute("UPDATE products SET name=%s, price=%s WHERE product_id=%s",
-                           (new_name, new_price, pid))
+            cursor.execute("""
+                UPDATE products
+                SET name=%s,
+                    description=%s,
+                    price=%s,
+                    category_id=%s,
+                    brand_id=%s
+                WHERE product_id = %s
+            """, (new_name, new_desc, new_price, category_id, brand_id, pid))
             conn.commit()
             conn.close()
             self.load_products()
-            messagebox.showinfo("Sukces", "Produkt został zaktualizowany")
+            messagebox.showinfo("Sukces", "Produkt zaktualizowany")
         except Exception as e:
             messagebox.showerror("Błąd", f"Wystąpił błąd: {e}")
+
+    def clear_form(self):
+        self.name.delete(0, tk.END)
+        self.description.delete(0, tk.END)
+        self.price.delete(0, tk.END)
+        self.category_cb.set("")
+        self.brand_cb.set("")
 
     def delete_product(self):
         selected = self.get_selected_product()
@@ -138,6 +257,8 @@ class ProductFrame(tk.Frame):
                 messagebox.showinfo("Sukces", "Produkt został usunięty")
             except Exception as e:
                 messagebox.showerror("Błąd", f"Wystąpił błąd: {e}")
+
+
 
 
 
