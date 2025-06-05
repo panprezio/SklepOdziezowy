@@ -7,7 +7,7 @@ from gui.stats_window import StatsFrame
 from gui.payments_window import PaymentsFrame
 from gui.show_help import show_help_window
 
-icons = {}
+
 
 
 
@@ -22,32 +22,32 @@ class MainApp(tk.Tk):
         self.config(menu=menu)
 
         menu.add_command(label="Klienci",
-                         image=icons["customers"] if icons["customers"] else None,
+
                          compound="left",
                          command=lambda: self.show_frame("customers"))
         menu.add_command(label="Produkty",
-                         image=icons["products"] if icons["products"] else None,
+
                          compound="left",
                          command=lambda: self.show_frame("products"))
         menu.add_command(label="Zamówienia",
-                         image=icons["orders"] if icons["orders"] else None,
+
                          compound="left",
                          command=lambda: self.show_frame("orders"))
         menu.add_command(label="Płatności",
-                         image=icons["orders"] if icons["orders"] else None,
+
                          compound="left",
                          command=lambda: self.show_frame("platnosci"))
         menu.add_command(label="Statystyki",
-                         image=icons["stats"] if icons["stats"] else None,
+
                          compound="left",
                          command=lambda: self.show_frame("stats"))
         menu.add_separator()
         menu.add_command(label="Pomoc",
-                         image=icons["help"] if icons["help"] else None,
+
                          compound="left",
                          command=self.show_help)
         menu.add_command(label="Zamknij",
-                         image=icons["close"] if icons["close"] else None,
+
                          compound="left",
                          command=self.quit)
 
